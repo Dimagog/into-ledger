@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/gob"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -144,12 +145,7 @@ func (p *parser) parseTransactions() {
 
 		t.To = cols[3]
 		assertf(len(t.To) > 0, "Expected TO, found empty.")
-		if strings.HasPrefix(t.To, "Assets:Reimbursements:") {
-			// pass
-		} else if strings.HasPrefix(t.To, "Assets:") {
-			// Don't pick up Assets.
-			t.skipClassification = true
-		} else if strings.HasPrefix(t.To, "Equity:") {
+		if strings.HasPrefix(t.To, "Equity:") {
 			// Don't pick up Equity.
 			t.skipClassification = true
 		}
@@ -492,6 +488,9 @@ func printSummary(t txn, idx, total int) {
 	printCategory(t)
 
 	color.New(color.BgRed, color.FgWhite).Printf(" %9.2f %3s ", t.Cur, t.CurName)
+	if *debug {
+		fmt.Printf(" hash: %s", hex.EncodeToString(t.Key))
+	}
 	fmt.Println()
 }
 
@@ -618,10 +617,25 @@ func (p *parser) showAndCategorizeTxns(rtxns []txn) {
 		}
 		fmt.Println()
 
-		fmt.Printf("Found %d transactions. Review (Y/n/q)? ", len(txns))
+		fmt.Printf("Found %d transactions. Review (Y/a/n/q)? ", len(txns))
 		ch, _, _ := keyboard.GetSingleKey()
-		if ch == 'n' || ch == 'q' {
+
+		if ch == 'q' {
 			return
+		}
+
+		if ch == 'n' || ch == 'a' {
+			fmt.Printf("\n\nMarking all transactions as accepted\n\n")
+			for i := 0; i < len(txns); i++ {
+				txns[i].Done = true
+				p.writeToDB(txns[i])
+			}
+
+			if ch == 'n' {
+				return
+			}
+
+			continue
 		}
 
 		for i := 0; i < len(txns) && i >= 0; {
