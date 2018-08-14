@@ -29,7 +29,6 @@ import (
 	"github.com/manishrjain/keys"
 	"github.com/pkg/errors"
 
-	mathex "github.com/pkg/math"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -246,7 +245,7 @@ func (p *parser) topHits(in string) []bayesian.Class {
 	sort.Sort(byScore(pairs))
 	result := make([]bayesian.Class, 0, 5)
 	last := pairs[0].score
-	for i := 0; i < mathex.Min(5, len(pairs)); i++ {
+	for i := 0; i < len(pairs); i++ {
 		pr := pairs[i]
 		if *debug {
 			fmt.Printf("i=%d s=%f Class=%v\n", i, pr.score, p.classes[pr.pos])
@@ -335,7 +334,6 @@ func (p *parser) parseTransactionsFromCSV(in []byte) []txn {
 			picked = append(picked, col)
 			if date, ok := parseDate(col); ok {
 				t.Date = date
-
 			} else if f, ok := parseCurrency(col); ok {
 				if *inverse {
 					f = -f
@@ -438,11 +436,12 @@ func saneMode() {
 }
 
 func getCategory(t txn) (prefix, cat string) {
-	prefix = "[TO]"
-	cat = t.To
 	if t.Cur > 0 {
 		prefix = "[FROM]"
 		cat = t.From
+	} else {
+		prefix = "[TO]"
+		cat = t.To
 	}
 	return
 }
@@ -543,6 +542,11 @@ LOOP:
 			return -1
 		case ".skip":
 			t.Done = false
+			p.db.Update(func(tx *bolt.Tx) error {
+				b := tx.Bucket(bucketName)
+				b.Delete(t.Key)
+				return nil
+			})
 			return 1
 		case ".quit":
 			return 9999
@@ -647,7 +651,7 @@ func (p *parser) showAndCategorizeTxns(rtxns []txn) {
 
 func ledgerFormat(t txn) string {
 	var b bytes.Buffer
-	b.WriteString(fmt.Sprintf("%s\t%s\n", t.Date.Format(stamp), t.Desc))
+	b.WriteString(fmt.Sprintf("%s %s\n", t.Date.Format(stamp), t.Desc))
 	b.WriteString(fmt.Sprintf("\t%-20s\t%.2f%s\n", t.To, math.Abs(t.Cur), t.CurName))
 	b.WriteString(fmt.Sprintf("\t%s\n\n", t.From))
 	return b.String()
