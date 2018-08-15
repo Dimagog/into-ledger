@@ -29,6 +29,7 @@ import (
 	"github.com/manishrjain/keys"
 	"github.com/pkg/errors"
 
+	mathex "github.com/pkg/math"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -201,8 +202,7 @@ func (p *parser) generateClasses() {
 		if _, has := tomap[t.To]; !has {
 			continue
 		}
-		desc := strings.ToLower(t.Desc)
-		p.cl.Learn(strings.Split(desc, " "), bayesian.Class(t.To))
+		p.cl.Learn(t.getTerms(), bayesian.Class(t.To))
 	}
 	p.cl.ConvertTermsFreqToTfIdf()
 }
@@ -224,9 +224,26 @@ func (b byScore) Swap(i int, j int) {
 	b[i], b[j] = b[j], b[i]
 }
 
-func (p *parser) topHits(in string) []bayesian.Class {
-	in = strings.ToLower(in)
-	terms := strings.Split(in, " ")
+var trimWhitespace = regexp.MustCompile(`^[\s]+|[\s}]+$`)
+var dedupWhitespace = regexp.MustCompile(`[\s]{2,}`)
+
+func (t *txn) getTerms() []string {
+	desc := strings.ToUpper(t.Desc)
+	desc = trimWhitespace.ReplaceAllString(desc, "")
+	desc = dedupWhitespace.ReplaceAllString(desc, " ")
+	terms := strings.Split(desc, " ")
+
+	terms = append(terms, "FullDesc: "+desc)
+
+	if *debug {
+		fmt.Printf("getTerms(%s) = %v\n", t.Desc, terms)
+	}
+
+	return terms
+}
+
+func (p *parser) topHits(t *txn) []bayesian.Class {
+	terms := t.getTerms()
 	scores, _, _ := p.cl.LogScores(terms)
 	pairs := make([]pair, 0, len(scores))
 
@@ -242,10 +259,14 @@ func (p *parser) topHits(in string) []bayesian.Class {
 	stddev /= float64(len(scores) - 1)
 	stddev = math.Sqrt(stddev)
 
+	if *debug {
+		fmt.Printf("stddev=%f\n", stddev)
+	}
+
 	sort.Sort(byScore(pairs))
 	result := make([]bayesian.Class, 0, 5)
 	last := pairs[0].score
-	for i := 0; i < len(pairs); i++ {
+	for i := 0; i < mathex.Min(10, len(pairs)); i++ {
 		pr := pairs[i]
 		if *debug {
 			fmt.Printf("i=%d s=%f Class=%v\n", i, pr.score, p.classes[pr.pos])
@@ -586,7 +607,7 @@ func (p *parser) printTxn(t *txn, idx, total int) int {
 	}
 	fmt.Println()
 
-	hits := p.topHits(t.Desc)
+	hits := p.topHits(t)
 	var ks keys.Shortcuts
 	setDefaultMappings(&ks)
 	for _, hit := range hits {
@@ -610,7 +631,7 @@ func (p *parser) showAndCategorizeTxns(rtxns []txn) {
 			// for i := range txns {
 			t := &txns[i]
 			if !t.Done {
-				hits := p.topHits(t.Desc)
+				hits := p.topHits(t)
 				if t.Cur < 0 {
 					t.To = string(hits[0])
 				} else {
