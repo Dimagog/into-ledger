@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"os/user"
 	"path"
 	"regexp"
 	"sort"
@@ -33,6 +34,14 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
+func homeDir() string {
+	currentUser, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	return currentUser.HomeDir
+}
+
 var (
 	debug      = flag.Bool("debug", false, "Additional debug information if set.")
 	journal    = flag.String("j", "", "Existing journal to learn from.")
@@ -43,7 +52,7 @@ var (
 	ignore     = flag.String("ic", "", "Comma separated list of columns to ignore in CSV.")
 	dateFormat = flag.String("d", "01/02/2006", "Express your date format in numeric form w.r.t. Jan 02, 2006, separated by slashes (/). See: https://golang.org/pkg/time/")
 	skip       = flag.Int("s", 0, "Number of header lines in CSV to skip")
-	configDir  = flag.String("conf", os.Getenv("HOME")+"/.into-ledger", "Config directory to store various into-ledger configs in.")
+	configDir  = flag.String("conf", homeDir()+"/.into-ledger", "Config directory to store various into-ledger configs in.")
 	shortcuts  = flag.String("short", "shortcuts.yaml", "Name of shortcuts file.")
 	inverse    = flag.Bool("inverse", false, "Inverse sign of transaction amounts in csv.")
 
