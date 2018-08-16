@@ -55,6 +55,7 @@ var (
 	configDir  = flag.String("conf", homeDir()+"/.into-ledger", "Config directory to store various into-ledger configs in.")
 	shortcuts  = flag.String("short", "shortcuts.yaml", "Name of shortcuts file.")
 	inverse    = flag.Bool("inverse", false, "Inverse sign of transaction amounts in csv.")
+	tfidf      = flag.Bool("tfidf", false, "Use TF-IDF classification algorithm instead of Bayesian")
 
 	rtxn   = regexp.MustCompile(`(\d{4}/\d{2}/\d{2})[\W]*(\w.*)`)
 	rto    = regexp.MustCompile(`\W*([:\w]+)(.*)`)
@@ -205,7 +206,11 @@ func (p *parser) generateClasses() {
 	}
 	assertf(len(p.classes) > 1, "Expected some categories. Found none.")
 
-	p.cl = bayesian.NewClassifierTfIdf(p.classes...)
+	if *tfidf {
+		p.cl = bayesian.NewClassifierTfIdf(p.classes...)
+	} else {
+		p.cl = bayesian.NewClassifier(p.classes...)
+	}
 	assertf(p.cl != nil, "Expected a valid classifier. Found nil.")
 	for _, t := range p.txns {
 		if _, has := tomap[t.To]; !has {
@@ -213,7 +218,10 @@ func (p *parser) generateClasses() {
 		}
 		p.cl.Learn(t.getTerms(), bayesian.Class(t.To))
 	}
-	p.cl.ConvertTermsFreqToTfIdf()
+
+	if *tfidf {
+		p.cl.ConvertTermsFreqToTfIdf()
+	}
 }
 
 type pair struct {
@@ -243,12 +251,22 @@ func (t *txn) getTerms() []string {
 	terms := strings.Split(desc, " ")
 
 	terms = append(terms, "FullDesc: "+desc)
+	terms = append(terms, "AmountClass: "+strconv.Itoa(getAmountClass(t.Cur)))
 
 	if *debug {
 		fmt.Printf("getTerms(%s) = %v\n", t.Desc, terms)
 	}
 
 	return terms
+}
+
+func getAmountClass(amount float64) int {
+	if amount == 0 {
+		return 0
+	}
+
+	class := math.Round(math.Log10(math.Abs(amount)) * 4)
+	return int(math.Round(math.Pow(10, class/4)))
 }
 
 func (p *parser) topHits(t *txn) []bayesian.Class {
