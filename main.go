@@ -244,6 +244,10 @@ func (b byScore) Swap(i int, j int) {
 var trimWhitespace = regexp.MustCompile(`^[\s]+|[\s}]+$`)
 var dedupWhitespace = regexp.MustCompile(`[\s]{2,}`)
 
+func (t *txn) isFromJournal() bool {
+	return t.Key == nil
+}
+
 func (t *txn) getTerms() []string {
 	desc := strings.ToUpper(t.Desc)
 	desc = trimWhitespace.ReplaceAllString(desc, "")
@@ -251,22 +255,50 @@ func (t *txn) getTerms() []string {
 	terms := strings.Split(desc, " ")
 
 	terms = append(terms, "FullDesc: "+desc)
-	terms = append(terms, "AmountClass: "+strconv.Itoa(getAmountClass(t.Cur)))
+
+	var cur float64
+	if t.isFromJournal() {
+		cur = t.Cur
+	} else {
+		cur = -t.Cur // we are looking for the opposite
+	}
+
+	var kind string
+	if cur >= 0 {
+		kind = "credit"
+	} else {
+		kind = "debit"
+	}
+	terms = append(terms, "Kind: "+kind)
+
+	terms = append(terms, "AmountClassFine: "+strconv.Itoa(getAmountClassFine(cur)))
+	terms = append(terms, "AmountClassCoarse: "+strconv.Itoa(getAmountClassCoarse(cur)))
 
 	if *debug {
-		fmt.Printf("getTerms(%s) = %v\n", t.Desc, terms)
+		fmt.Printf("getTerms(%s, %.2f) = %v\n", t.Desc, t.Cur, terms)
 	}
 
 	return terms
 }
 
-func getAmountClass(amount float64) int {
+func getAmountClassFine(amount float64) int {
 	if amount == 0 {
 		return 0
 	}
 
-	class := math.Round(math.Log10(math.Abs(amount)) * 4)
-	return int(math.Round(math.Pow(10, class/4)))
+	log := math.Round(math.Log10(math.Abs(amount)) * 4)
+	class := int(math.Round(math.Pow(10, log/4)))
+	return class
+}
+
+func getAmountClassCoarse(amount float64) int {
+	if amount == 0 {
+		return 0
+	}
+
+	log := int(math.Ceil(math.Log10(math.Abs(amount))))
+	class := int(math.Round(math.Pow10(log)))
+	return class
 }
 
 func (p *parser) topHits(t *txn) []bayesian.Class {
@@ -295,11 +327,11 @@ func (p *parser) topHits(t *txn) []bayesian.Class {
 	last := pairs[0].score
 	for i := 0; i < mathex.Min(10, len(pairs)); i++ {
 		pr := pairs[i]
-		if *debug {
-			fmt.Printf("i=%d s=%f Class=%v\n", i, pr.score, p.classes[pr.pos])
-		}
 		if math.Abs(pr.score-last) > stddev {
 			break
+		}
+		if *debug {
+			fmt.Printf("i=%d s=%.3g Class=%v\n", i, pr.score, p.classes[pr.pos])
 		}
 		result = append(result, p.classes[pr.pos])
 		last = pr.score
