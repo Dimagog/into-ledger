@@ -43,19 +43,21 @@ func homeDir() string {
 }
 
 var (
-	debug      = flag.Bool("debug", false, "Additional debug information if set.")
-	journal    = flag.String("j", "", "Existing journal to learn from.")
-	output     = flag.String("o", "out.ldg", "Journal file to write to.")
-	csvFile    = flag.String("csv", "", "File path of CSV file containing new transactions.")
-	account    = flag.String("a", "", "Name of bank account transactions belong to.")
-	currency   = flag.String("c", "", "Set currency if any.")
-	ignore     = flag.String("ic", "", "Comma separated list of columns to ignore in CSV.")
-	dateFormat = flag.String("d", "01/02/2006", "Express your date format in numeric form w.r.t. Jan 02, 2006, separated by slashes (/). See: https://golang.org/pkg/time/")
-	skip       = flag.Int("s", 0, "Number of header lines in CSV to skip")
-	configDir  = flag.String("conf", homeDir()+"/.into-ledger", "Config directory to store various into-ledger configs in.")
-	shortcuts  = flag.String("short", "shortcuts.yaml", "Name of shortcuts file.")
-	inverse    = flag.Bool("inverse", false, "Inverse sign of transaction amounts in csv.")
-	tfidf      = flag.Bool("tfidf", false, "Use TF-IDF classification algorithm instead of Bayesian")
+	debug       = flag.Bool("debug", false, "Additional debug information if set.")
+	journal     = flag.String("j", "", "Existing journal to learn from.")
+	output      = flag.String("o", "out.ldg", "Journal file to write to.")
+	csvFile     = flag.String("csv", "", "File path of CSV file containing new transactions.")
+	account     = flag.String("a", "", "Name of bank account transactions belong to.")
+	currency    = flag.String("c", "", "Set currency if any.")
+	ignore      = flag.String("ic", "", "Comma separated list of columns to ignore in CSV.")
+	dateFormat  = flag.String("d", "01/02/2006", "Express your date format in numeric form w.r.t. Jan 02, 2006, separated by slashes (/). See: https://golang.org/pkg/time/")
+	skip        = flag.Int("s", 0, "Number of header lines in CSV to skip")
+	configDir   = flag.String("conf", homeDir()+"/.into-ledger", "Config directory to store various into-ledger configs in.")
+	shortcuts   = flag.String("short", "shortcuts.yaml", "Name of shortcuts file.")
+	inverseSign = flag.Bool("inverseSign", false, "Inverse sign of transaction amounts in CSV.")
+	reverseCSV  = flag.Bool("reverseCSV", false, "Reverse order of transactions in CSV")
+	allowDups   = flag.Bool("allowDups", false, "Don't filter out duplicate transactions")
+	tfidf       = flag.Bool("tfidf", false, "Use TF-IDF classification algorithm instead of Bayesian")
 
 	rtxn   = regexp.MustCompile(`(\d{4}/\d{2}/\d{2})[\W]*(\w.*)`)
 	rto    = regexp.MustCompile(`\W*([:\w]+)(.*)`)
@@ -415,7 +417,7 @@ func (p *parser) parseTransactionsFromCSV(in []byte) []txn {
 			if date, ok := parseDate(col); ok {
 				t.Date = date
 			} else if f, ok := parseCurrency(col); ok {
-				if *inverse {
+				if *inverseSign {
 					f = -f
 				}
 				t.Cur = f
@@ -770,8 +772,12 @@ func (p *parser) removeDuplicates(txns []txn) []txn {
 		return txns
 	}
 
-	sort.Sort(byTime(p.txns))
 	sort.Stable(byTime(txns))
+	if *allowDups {
+		return txns
+	}
+
+	sort.Sort(byTime(p.txns))
 
 	prev := p.txns
 	first := txns[0].Date.Add(-24 * time.Hour)
@@ -813,6 +819,12 @@ func oerr(msg string) {
 	fmt.Println("Flags available:")
 	flag.PrintDefaults()
 	fmt.Println()
+}
+
+func reverseSlice(s []txn) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
 }
 
 func main() {
@@ -887,6 +899,10 @@ func main() {
 	in, err := ioutil.ReadFile(*csvFile)
 	checkf(err, "Unable to read csv file: %v", *csvFile)
 	txns := p.parseTransactionsFromCSV(in)
+	if *reverseCSV {
+		reverseSlice(txns)
+	}
+
 	for i := range txns {
 		if txns[i].Cur > 0 {
 			txns[i].To = *account
