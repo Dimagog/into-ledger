@@ -101,7 +101,7 @@ func (b byTime) Swap(i int, j int)      { b[i], b[j] = b[j], b[i] }
 
 func checkf(err error, format string, args ...interface{}) {
 	if err != nil {
-		log.Printf(format, args)
+		log.Printf(format, args...)
 		log.Println()
 		log.Fatalf("%+v", errors.WithStack(err))
 	}
@@ -109,7 +109,7 @@ func checkf(err error, format string, args ...interface{}) {
 
 func assertf(ok bool, format string, args ...interface{}) {
 	if !ok {
-		log.Printf(format, args)
+		log.Printf(format, args...)
 		log.Println()
 		log.Fatalf("%+v", errors.Errorf("Should be true, but is false"))
 	}
@@ -734,7 +734,13 @@ func (p *parser) showAndCategorizeTxns(rtxns []txn) {
 func ledgerFormat(t txn) string {
 	var b bytes.Buffer
 	b.WriteString(fmt.Sprintf("%s %s\n", t.Date.Format(stamp), t.Desc))
-	b.WriteString(fmt.Sprintf("\t%-20s\t%.2f%s\n", t.To, math.Abs(t.Cur), t.CurName))
+	b.WriteString(fmt.Sprintf("\t%-20s \t", t.To))
+
+	if len([]rune(t.CurName)) <= 1 {
+		b.WriteString(fmt.Sprintf("%s%.2f\n", t.CurName, math.Abs(t.Cur)))
+	} else {
+		b.WriteString(fmt.Sprintf("%.2f %s\n", math.Abs(t.Cur), t.CurName))
+	}
 	b.WriteString(fmt.Sprintf("\t%s\n\n", t.From))
 	return b.String()
 }
